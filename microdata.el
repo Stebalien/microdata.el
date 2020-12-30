@@ -34,6 +34,7 @@
 ;;; Code:
 (require 'dash)
 (require 'dom)
+(require 'mm-decode)
 
 (defun microdata-from-html ()
   "Extracts microdata from an HTML buffer."
@@ -41,7 +42,6 @@
 
 (defun microdata-from-email ()
   "Extracts microdata from a buffer containing an MIME encoded email."
-  (require 'mm-decode)
   (mm-with-part (mm-find-part-by-type (list (mm-dissect-buffer)) "text/html" nil t)
     (microdata-from-html)))
 
