@@ -1,0 +1,63 @@
+#+TITLE: microdata.el
+
+An emacs package for extracting microdata from HTML and emails. Useful for executing email actions from Emacs.
+
+* Example
+Personally, I use this package to open Discourse and GitHub PR/issue notifications from notmuch. These examples demonstrate how that works.
+
+** Ex 1: Notmuch Action Menu
+Here we display an Ivy menu with all available actions.
+
+#+BEGIN_SRC emacs-lisp
+(require 'microdata)
+(require 'ivy)
+(require 'notmuch)
+
+(defun notmuch-show--get-actions ()
+  (let (html)
+    (with-current-notmuch-show-message (setq html (microdata-email-actions)))
+    html))
+
+(defun notmuch-show-action ()
+  "Pick an action to perform on the email."
+  (interactive)
+  (if-let ((actions (notmuch-show--get-actions)))
+      (ivy-read "Action: " actions
+                :require-match t
+                :caller #'notmuch-show-action
+                :action (lambda (res) (browse-url (alist-get 'url (cdr res)))))
+    (user-error "No actions defined!")))
+#+END_SRC
+
+** Ex 2: Notmuch Show View
+Here we execute the "view" action for the currently viewed email, if any.
+
+#+BEGIN_SRC emacs-lisp
+(require 'microdata)
+(require 'notmuch)
+
+;; This can be used to quickly open an email's "view target" in a web browser.
+(defun notmuch-show-action-view ()
+      "Execute the `view' action."
+      (interactive)
+      (with-current-notmuch-show-message
+       (when-let ((action (car (microdata-email-actions-by-type "ViewAction"))))
+         (message "%s: %s" (car action) (cdr action))
+         (browse-url (cdr action)))))
+#+END_SRC
+
+** Ex 3: Notmuch Search View
+Here we execute the "view" action for the currently /selected/ email (in search mode) if any. I usually bind this to =C-c C-c= or equivalent to quickly view issues/PRs from GitHub notification emails.
+
+#+BEGIN_SRC emacs-lisp
+(require 'microdata)
+(require 'notmuch)
+
+(defun notmuch-show-action-view ()
+  "Execute the `view' action."
+  (interactive)
+  (with-current-notmuch-show-message
+   (when-let ((action (car (microdata-email-actions-by-type "ViewAction"))))
+     (message "%s: %s" (car action) (cdr action))
+     (browse-url (cdr action)))))
+#+END_SRC

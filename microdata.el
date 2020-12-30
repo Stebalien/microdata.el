@@ -46,7 +46,11 @@
     (microdata-from-html)))
 
 (defun microdata-email-actions ()
-  "Extracts email actions from a buffer containing an MIME encoded email."
+  "Extracts email actions from a buffer containing an MIME encoded email.
+
+Returns an alist mapping action names to properties alists (containing a `url' and a `type').
+an alist containing a `url' and a `type'.
+"
   (->>
    (microdata-from-email)
    (--filter (and
@@ -57,6 +61,16 @@
            (gethash "name" it)
            `((url . ,(or (gethash "url" it) (gethash "target" it)))
              (type . ,(gethash "@type" it)))))))
+
+(defun microdata-email-actions-by-type (type)
+  "Extracts all email actions with the given type (usually zero or one).
+
+Returns an alist mapping action names to URLs.
+"
+  (->>
+   (microdata-email-actions)
+   (--filter (string= type (alist-get 'type (cdr it))))
+   (--map (cons (car it) (alist-get 'url (cdr it))))))
 
 (defun microdata--parse-item (root)
   "Parses a microdata item."
