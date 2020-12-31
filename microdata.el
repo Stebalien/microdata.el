@@ -38,12 +38,27 @@
 
 (defun microdata-from-html ()
   "Extracts microdata from an HTML buffer."
-  (microdata--from-dom (libxml-parse-html-region (point-min) (point-max))))
+  (cdr (microdata--parse (libxml-parse-html-region (point-min) (point-max)))))
+
 
 (defun microdata-from-email ()
   "Extracts microdata from a buffer containing an MIME encoded email."
   (mm-with-part (mm-find-part-by-type (list (mm-dissect-buffer)) "text/html" nil t)
-    (microdata-from-html)))
+    (-let* ((dom (libxml-parse-html-region (point-min) (point-max)))
+            ((properties . items) (microdata--parse dom)))
+      ;; Ok, so, Google doesn't always remember to wrap their emails in an
+      ;; "EmailMessage" item.
+      ;;
+      ;; If we see unattached properties, attach them to an email object.
+      (when properties
+        (let ((item (make-hash-table :test 'equal)))
+          (puthash "@context" "http://schema.org" item)
+          (puthash "@type" "EmailMessage" item)
+          (dolist (prop properties)
+            (-let (((k . v) prop))
+              (puthash k v item)))
+          (push item items)))
+      items)))
 
 (defun microdata-email-actions ()
   "Extracts email actions from a buffer containing an MIME encoded email.
@@ -56,11 +71,12 @@ an alist containing a `url' and a `type'.
    (--filter (and
               (string= "http://schema.org" (gethash "@context" it))
               (string= "EmailMessage" (gethash "@type" it))))
-   (--keep (or (gethash "potentialAction" it) (gethash "action" it))) 
-   (--map (cons
-           (gethash "name" it)
-           `((url . ,(or (gethash "url" it) (gethash "target" it)))
-             (type . ,(gethash "@type" it)))))))
+   (--keep (or (gethash "potentialAction" it) (gethash "action" it)))
+   (--map (let* ((type (gethash "@type" it))
+                 (url (or (gethash "url" it) (gethash "target" it)))
+                 (name (or (gethash "name" it)
+                           (format "%s: %s" (s-chop-suffix "Action" type) url))))
+            `(,name . ((url . ,url) (type . ,type)))))))
 
 (defun microdata-email-actions-by-type (type)
   "Extracts all email actions with the given type (usually zero or one).
@@ -72,53 +88,60 @@ Returns an alist mapping action names to URLs.
    (--filter (string= type (alist-get 'type (cdr it))))
    (--map (cons (car it) (alist-get 'url (cdr it))))))
 
-(defun microdata--parse-item (root)
-  "Parses a microdata item."
-  (let ((stack (list (dom-non-text-children root)))
-        (item (make-hash-table :test 'equal)))
-    ;; Extract the context/type.
-    (when-let ((type (dom-attr root 'itemtype)))
-      (if-let ((idx (--find-last-index (eq it ?/) (string-to-list type)))
-               (context (substring type 0 idx))
-               (type (substring type (1+ idx))))
-          (progn (puthash "@context" context item)
-                 (puthash "@type" type item))
-        (puthash "@type" type item)))
-    ;; Extract the properties.
-    (while stack 
-      (dolist (el (pop stack))
-        (if-let ((prop (dom-attr el 'itemprop))
-                 (value (pcase (dom-tag el)
-                          ((guard (dom-attr el 'itemtype)) (microdata--parse-item el))
-                          ((or 'link 'a) (dom-attr el 'href))
-                          ('meta (dom-attr el 'content))
-                          ('time (dom-attr el 'datetime))
-                          (_ (dom-text el)))))
-            (puthash prop value item)
-          (push (dom-non-text-children el) stack))))
-    item))
-
-(defun microdata--from-dom (root)
+(defun microdata--parse (el)
   "Extracts microdata from a parsed DOM."
-  (cond
-   ;; First, look for json-ld
-   ((and (eq (dom-tag root) 'script)
-         (string= (dom-attr root 'type) "application/ld+json"))
-    (-list (json-parse-string (caddr root)
-                              :array-type 'list
-                              :null-object nil
-                              :false-object nil)))
-   ;; then, look for microdata.
-   ;; NOTE: we look for itemtype because libxml omits empty "boolean" html
-   ;; attributes. That means:
-   ;;     <div itemscope itemtype="foobar">
-   ;; loses the "itemscope" tag.
-   ((dom-attr root 'itemtype)
-    (list (microdata--parse-item root)))
-   ;; finally, search the children.
-   (t (->>
-       (dom-non-text-children root)
-       (-map #'microdata--from-dom)
-       (-flatten)))))
+  (if (eq (dom-tag el) 'script)
+      ;; If we're looking at a script tag, check for json-ld, otherwise ignore.
+      (when (string= (dom-attr el 'type) "application/ld+json")
+        ;; Parse it, then return an alist mapping `nil' to each item.
+        ;; Otherwise, they'll be treated as properties.
+        (->> (json-parse-string (caddr el)
+                                :array-type 'list
+                                :null-object nil
+                                :false-object nil)
+             (-list)
+             ;; these values aren't attached to properties.
+             (--map (cons nil it))))
+    (let* ((type (dom-attr el 'itemtype))
+           (prop (dom-attr el 'itemprop))
+           (scope (or type (dom-attr el 'itemscope)))
+           properties items item)
+      ;; First, parse the children. Children can contain unattached properties
+      ;; and standalone items.
+      (dolist (child (dom-non-text-children el))
+        (-let (((p . i) (microdata--parse child)))
+          (setq properties (append p properties)
+                items (append i items))))
+      ;; If this element defines an item scope, create a new item from the
+      ;; unattached properties.
+      (when scope
+        (setq item (make-hash-table :test 'equal))
+        ;; if there is a type defined, add it to the object.
+        (when type
+          (if-let ((idx (--find-last-index (eq it ?/) (string-to-list type)))
+                   (context (substring type 0 idx))
+                   (type (substring type (1+ idx))))
+              (progn (puthash "@context" context item)
+                     (puthash "@type" type item))
+            (puthash "@type" type item)))
+        ;; now add the properties
+        (dolist (prop properties)
+          (-let (((k . v) prop))
+            (puthash k v item)))
+        ;; and "claim" them.
+        (setq properties nil))
+      (if (not prop)
+          ;; If we're not defining a property and we have an item, save the item.
+          (when item (push item items))
+        ;; If we have a property and don't have an item, extract an item.
+        (unless item
+          (setq item (pcase (dom-tag el)
+                       ((or 'link 'a) (dom-attr el 'href))
+                       ('meta (dom-attr el 'content))
+                       ('time (dom-attr el 'datetime))
+                       (_ (dom-text el)))))
+        ;; then assign the item to the property.
+        (push (cons prop item) properties))
+      (cons properties items))))
 
 (provide 'microdata)
