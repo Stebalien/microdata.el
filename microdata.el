@@ -100,8 +100,7 @@ Returns an alist mapping action names to URLs.
                                 :null-object nil
                                 :false-object nil)
              (-list)
-             ;; these values aren't attached to properties.
-             (--map (cons nil it))))
+             (cons nil)))
     (let* ((type (dom-attr el 'itemtype))
            (prop (dom-attr el 'itemprop))
            (scope (or type (dom-attr el 'itemscope)))
