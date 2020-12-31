@@ -75,7 +75,7 @@ an alist containing a `url' and a `type'.
    (--map (let* ((type (gethash "@type" it))
                  (url (or (gethash "url" it) (gethash "target" it)))
                  (name (or (gethash "name" it)
-                           (format "%s: %s" (s-chop-suffix "Action" type) url))))
+                           (format "%s: %s" (string-remove-suffix "Action" type) url))))
             `(,name . ((url . ,url) (type . ,type)))))))
 
 (defun microdata-email-actions-by-type (type)
