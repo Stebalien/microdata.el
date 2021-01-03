@@ -10,7 +10,6 @@ Here we display an Ivy menu with all available actions.
 
 #+BEGIN_SRC emacs-lisp
 (require 'microdata)
-(require 'ivy)
 (require 'notmuch)
 
 (defun notmuch-show--get-actions ()
@@ -22,10 +21,10 @@ Here we display an Ivy menu with all available actions.
   "Pick an action to perform on the email."
   (interactive)
   (if-let ((actions (notmuch-show--get-actions)))
-      (ivy-read "Action: " actions
-                :require-match t
-                :caller #'notmuch-show-action
-                :action (lambda (res) (browse-url (alist-get 'url (cdr res)))))
+      (when-let* ((selected (completing-read "Action: " actions nil t))
+                  (action (alist-get selected actions nil nil 'equal))
+                  (url (alist-get 'url action)))
+        (browse-url url))
     (user-error "No actions defined!")))
 #+END_SRC
 
