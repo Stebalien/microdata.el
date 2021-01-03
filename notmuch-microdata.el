@@ -55,7 +55,7 @@
 (defun notmuch-microdata-show-action ()
   "Pick an action to perform on the email."
   (interactive)
-  (if-let ((actions (notmuch-show--get-actions)))
+  (if-let ((actions (notmuch-microdata-show--get-actions)))
       (when-let* ((selected (completing-read "Action: " actions nil t))
                   (action (alist-get selected actions nil nil 'equal))
                   (url (alist-get 'url action)))
