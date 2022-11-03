@@ -5,7 +5,7 @@
 ;; Author: Steven Allen <steven@stebalien.com>
 ;; URL: https://github.com/Stebalien/microdata.el
 ;; Version: 0.0.1
-;; Package-Requires: ((dash "2.0.0") (emacs "27.0"))
+;; Package-Requires: ((emacs "27.0"))
 ;; Keywords: html5, microdata, email
 
 ;; This file is not part of GNU Emacs.
@@ -32,7 +32,7 @@
 ;; "actions".
 
 ;;; Code:
-(require 'dash)
+(require 'seq)
 (require 'dom)
 (require 'subr-x)
 (require 'mm-decode)
@@ -44,8 +44,8 @@
 (defun microdata-from-email ()
   "Extracts microdata from a buffer containing an MIME encoded email."
   (mm-with-part (mm-find-part-by-type (list (mm-dissect-buffer)) "text/html" nil t)
-    (-let* ((dom (libxml-parse-html-region (point-min) (point-max)))
-            ((properties . items) (microdata--parse dom)))
+    (pcase-let* ((dom (libxml-parse-html-region (point-min) (point-max)))
+                 (`(,properties . ,items) (microdata--parse dom)))
       ;; Ok, so, Google doesn't always remember to wrap their emails in an
       ;; "EmailMessage" item.
       ;;
@@ -54,79 +54,82 @@
         (let ((item (make-hash-table :test 'equal)))
           (puthash "@context" "http://schema.org" item)
           (puthash "@type" "EmailMessage" item)
-          (dolist (prop properties)
-            (-let (((k . v) prop))
-              (puthash k v item)))
+          (pcase-dolist (`(,k . ,v) properties)
+            (puthash k v item))
           (push item items)))
       items)))
 
 (defun microdata-email-actions ()
-  "Extracts email actions from a buffer containing an MIME encoded email.
+  "Extract email actions from a buffer containing an MIME encoded email.
 
-Returns an alist mapping action names to properties alists (containing a `url' and a `type').
-an alist containing a `url' and a `type'.
-"
-  (->>
-   (microdata-from-email)
-   (--filter (and
-              (string= "http://schema.org" (gethash "@context" it))
-              (string= "EmailMessage" (gethash "@type" it))))
-   (--keep (or (gethash "potentialAction" it) (gethash "action" it)))
-   (--map (let* ((type (gethash "@type" it))
-                 (url (or (gethash "url" it) (gethash "target" it)))
-                 (name (or (gethash "name" it)
-                           (format "%s: %s" (string-remove-suffix "Action" type) url))))
-            `(,name . ((url . ,url) (type . ,type)))))))
+Returns an alist mapping action names to properties alists (containing a `url'
+and a `type'). an alist containing a `url' and a `type'."
+  (thread-last
+    (microdata-from-email)
+    (seq-filter
+     (lambda (it) (and (string= "http://schema.org" (gethash "@context" it))
+                  (string= "EmailMessage" (gethash "@type" it)))))
+    (seq-keep
+     (lambda (it) (or (gethash "potentialAction" it) (gethash "action" it))))
+    (seq-map
+     (lambda (it) (let* ((type (gethash "@type" it))
+                    (url (or (gethash "url" it) (gethash "target" it)))
+                    (name (or (gethash "name" it)
+                              (format "%s: %s" (string-remove-suffix "Action" type) url))))
+               `(,name . ((url . ,url) (type . ,type))))))))
 
 (defun microdata-email-actions-by-type (type)
-  "Extracts all email actions with the given type (usually zero or one).
+  "Extract all email actions with the given TYPE (usually zero or one).
 
-Returns an alist mapping action names to URLs.
-"
-  (->>
-   (microdata-email-actions)
-   (--filter (string= type (alist-get 'type (cdr it))))
-   (--map (cons (car it) (alist-get 'url (cdr it))))))
+Returns an alist mapping action names to URLs."
+  (thread-last
+    (microdata-email-actions)
+    (seq-filter
+     (lambda (it) (string= type (alist-get 'type (cdr it)))))
+    (seq-map
+     (lambda (it) (cons (car it) (alist-get 'url (cdr it)))))))
 
-(defun microdata--parse (el)
-  "Extracts microdata from a parsed DOM."
-  (if (eq (dom-tag el) 'script)
+(defun microdata--parse (element)
+  "Extract microdata from a parsed dom ELEMENT."
+  (if (eq (dom-tag element) 'script)
       ;; If we're looking at a script tag, check for json-ld, otherwise ignore.
-      (when (string= (dom-attr el 'type) "application/ld+json")
+      (when (string= (dom-attr element 'type) "application/ld+json")
         ;; Parse it, then return an alist mapping `nil' to each item.
         ;; Otherwise, they'll be treated as properties.
-        (->> (json-parse-string (caddr el)
-                                :array-type 'list
-                                :null-object nil
-                                :false-object nil)
-             (-list)
-             (cons nil)))
-    (let* ((type (dom-attr el 'itemtype))
-           (prop (dom-attr el 'itemprop))
-           (scope (or type (dom-attr el 'itemscope)))
+        (thread-last
+          (json-parse-string (caddr element)
+                             :array-type 'list
+                             :null-object nil
+                             :false-object nil)
+          ensure-list
+          (cons nil)))
+    (let* ((type (dom-attr element 'itemtype))
+           (prop (dom-attr element 'itemprop))
+           (scope (or type (dom-attr element 'itemscope)))
            properties items item)
       ;; First, parse the children. Children can contain unattached properties
       ;; and standalone items.
-      (dolist (child (dom-non-text-children el))
-        (-let (((p . i) (microdata--parse child)))
+      (thread-last
+        element
+        (dom-non-text-children)
+        (seq-map 'microdata--parse)
+        (seq-do (pcase-lambda (`(,p . ,i))
           (setq properties (append p properties)
-                items (append i items))))
+                items (append i items)))))
       ;; If this element defines an item scope, create a new item from the
       ;; unattached properties.
       (when scope
         (setq item (make-hash-table :test 'equal))
         ;; if there is a type defined, add it to the object.
-        (when type
-          (if-let ((idx (--find-last-index (eq it ?/) (string-to-list type)))
-                   (context (substring type 0 idx))
-                   (type (substring type (1+ idx))))
-              (progn (puthash "@context" context item)
-                     (puthash "@type" type item))
-            (puthash "@type" type item)))
+        (pcase type
+          ((rx (let context (+ nonl)) "/" (let type (+ nonl)))
+           (puthash "@context" context item)
+           (puthash "@type" type item))
+          ((pred (not null))
+           (puthash "@type" type item)))
         ;; now add the properties
-        (dolist (prop properties)
-          (-let (((k . v) prop))
-            (puthash k v item)))
+        (pcase-dolist (`(,k . ,v) properties)
+          (puthash k v item))
         ;; and "claim" them.
         (setq properties nil))
       (if (not prop)
@@ -134,13 +137,14 @@ Returns an alist mapping action names to URLs.
           (when item (push item items))
         ;; If we have a property and don't have an item, extract an item.
         (unless item
-          (setq item (pcase (dom-tag el)
-                       ((or 'link 'a) (dom-attr el 'href))
-                       ('meta (dom-attr el 'content))
-                       ('time (dom-attr el 'datetime))
-                       (_ (dom-text el)))))
+          (setq item (pcase (dom-tag element)
+                       ((or 'link 'a) (dom-attr element 'href))
+                       ('meta (dom-attr element 'content))
+                       ('time (dom-attr element 'datetime))
+                       (_ (dom-text element)))))
         ;; then assign the item to the property.
         (push (cons prop item) properties))
       (cons properties items))))
 
 (provide 'microdata)
+;;; microdata.el ends here

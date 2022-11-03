@@ -5,7 +5,7 @@
 ;; Author: Steven Allen <steven@stebalien.com>
 ;; URL: https://github.com/Stebalien/microdata.el
 ;; Version: 0.0.1
-;; Package-Requires: ((dash "2.0.0") (emacs "27.0") (microdata "0.0.1") notmuch)
+;; Package-Requires: ((emacs "27.0") (microdata "0.0.1") notmuch)
 ;; Keywords: html5, microdata, email
 
 ;; This file is not part of GNU Emacs.
