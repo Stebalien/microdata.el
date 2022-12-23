@@ -2,12 +2,6 @@
 
 ;; Copyright 2021 Steven Allen <steven@stebalien.com>
 
-;; Author: Steven Allen <steven@stebalien.com>
-;; URL: https://github.com/Stebalien/microdata.el
-;; Version: 0.0.1
-;; Package-Requires: ((emacs "27.0") (microdata "0.0.1") (notmuch "0.34.1"))
-;; Keywords: html5, microdata, email
-
 ;; This file is not part of GNU Emacs.
 
 ;; This file is free software; you can redistribute it and/or modify
