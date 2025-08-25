@@ -1,6 +1,6 @@
 ;;; notmuch-microdata.el --- Notmuch email actions -*- lexical-binding: t -*-
 
-;; Copyright 2021 Steven Allen <steven@stebalien.com>
+;; Copyright 2021-2025 Steven Allen <steven@stebalien.com>
 
 ;; This file is not part of GNU Emacs.
 
@@ -36,11 +36,12 @@
         (coding-system-for-read 'no-conversion))
     (with-temp-buffer
       (call-process notmuch-command nil t nil "show" "--format=raw" id)
-      (when-let ((action (car (microdata-email-actions-by-type "ViewAction"))))
+      (when-let* ((action (car (microdata-email-actions-by-type "ViewAction"))))
         (message "%s: %s" (car action) (cdr action))
         (browse-url (cdr action))))))
 
 (defun notmuch-microdata-show--get-actions ()
+  "Return all microdata actions in the current notmuch message."
   (let (actions)
     (with-current-notmuch-show-message (setq actions (microdata-email-actions)))
     actions))
@@ -49,7 +50,7 @@
 (defun notmuch-microdata-show-action ()
   "Pick an action to perform on the email."
   (interactive)
-  (if-let ((actions (notmuch-microdata-show--get-actions)))
+  (if-let* ((actions (notmuch-microdata-show--get-actions)))
       (when-let* ((selected (completing-read "Action: " actions nil t))
                   (action (alist-get selected actions nil nil 'equal))
                   (url (alist-get 'url action)))
@@ -60,9 +61,10 @@
 (defun notmuch-microdata-show-action-view ()
   "Execute the `view' action."
   (interactive)
-  (with-current-notmuch-show-message 
-   (when-let ((action (car (microdata-email-actions-by-type "ViewAction"))))
+  (with-current-notmuch-show-message
+   (when-let* ((action (car (microdata-email-actions-by-type "ViewAction"))))
      (message "%s: %s" (car action) (cdr action))
      (browse-url (cdr action)))))
 
 (provide 'notmuch-microdata)
+;;; notmuch-microdata.el ends here

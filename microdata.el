@@ -1,6 +1,6 @@
 ;;; microdata.el --- Structured data extraction -*- lexical-binding: t -*-
 
-;; Copyright 2020 Steven Allen <steven@stebalien.com>
+;; Copyright 2020-2025 Steven Allen <steven@stebalien.com>
 
 ;; Author: Steven Allen <steven@stebalien.com>
 ;; URL: https://github.com/Stebalien/microdata.el
@@ -36,6 +36,9 @@
 (require 'dom)
 (require 'subr-x)
 (require 'mm-decode)
+
+(defalias 'microdata--dom-inner-text
+  (if (< emacs-major-version 30) #'dom-text #'dom-inner-text))
 
 (defun microdata-from-html ()
   "Extracts microdata from an HTML buffer."
@@ -141,7 +144,7 @@ Returns an alist mapping action names to URLs."
                        ((or 'link 'a) (dom-attr element 'href))
                        ('meta (dom-attr element 'content))
                        ('time (dom-attr element 'datetime))
-                       (_ (dom-text element)))))
+                       (_ (microdata--dom-inner-text element)))))
         ;; then assign the item to the property.
         (push (cons prop item) properties))
       (cons properties items))))
