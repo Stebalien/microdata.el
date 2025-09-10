@@ -38,7 +38,7 @@
 (require 'mm-decode)
 
 (defalias 'microdata--dom-inner-text
-  (if (< emacs-major-version 30) #'dom-text #'dom-inner-text))
+  (if (< emacs-major-version 31) #'dom-text #'dom-inner-text))
 
 (defun microdata-from-html ()
   "Extracts microdata from an HTML buffer."
