@@ -6,7 +6,7 @@
 ;; URL: https://github.com/Stebalien/microdata.el
 ;; Version: 0.0.1
 ;; Package-Requires: ((emacs "27.1") (seq "2.22") notmuch)
-;; Keywords: html5, microdata, email
+;; Keywords: microdata, mail
 
 ;; This file is not part of GNU Emacs.
 
